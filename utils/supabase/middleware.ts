@@ -13,7 +13,18 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
-  const supabase = createServerClient(supabaseUrl!, supabaseKey!, {
+  const url = supabaseUrl?.trim();
+  const key = supabaseKey?.trim();
+  if (!url || !key) {
+    console.error(
+      "[middleware] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; skipping Supabase SSR client.",
+    );
+    return NextResponse.next({ request });
+  }
+
+  let supabase;
+  try {
+    supabase = createServerClient(url, key, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -34,8 +45,17 @@ export async function updateSession(request: NextRequest) {
       },
     },
   });
+  } catch (e) {
+    console.error("[middleware] createServerClient failed:", e);
+    return NextResponse.next({ request });
+  }
 
-  await supabase.auth.getUser();
+  try {
+    await supabase.auth.getUser();
+  } catch (e) {
+    console.error("[middleware] supabase.auth.getUser failed:", e);
+    return NextResponse.next({ request });
+  }
 
   return supabaseResponse;
 }

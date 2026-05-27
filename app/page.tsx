@@ -1,11 +1,33 @@
 import AdminDashboard from "@/app/components/admin-dashboard";
-import { createServiceClient } from "@/utils/supabase/service";
+import { createClient } from "@supabase/supabase-js";
 
 /** Always fetch fresh counts and queues (never bake a stale snapshot at build time). */
 export const dynamic = "force-dynamic";
 
+/**
+ * Dashboard data uses the plain `@supabase/supabase-js` client (no `@supabase/ssr`
+ * cookie/session layer). Prefer SUPABASE_SERVICE_ROLE_KEY on the server so reads
+ * are not blocked by RLS for anonymous recruiters.
+ */
+function createDashboardSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const secretKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ??
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+
+  if (!url || !secretKey) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (recommended) or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
+    );
+  }
+
+  return createClient(url, secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 async function fetchDashboardData() {
-  const supabase = createServiceClient();
+  const supabase = createDashboardSupabase();
 
   const departmentsRes = await supabase
     .from("departments")
