@@ -1,11 +1,17 @@
 # Support Router
 
+## Quick Summary
+
+- **Built with:** **Next.js** (web app & dashboard), **Supabase / PostgreSQL** (live data store), **OpenAI** (routes and labels each ticket).
+- **What it solves:** Incoming support messages get **automatic classification**—priority, tone, summary, and the right department—without an agent opening every ticket first.
+- **Humans stay in charge:** Operators can **override** the routed department anytime; those decisions are tracked so workflows stay trustworthy.
+- **Audit-ready:** Every AI run leaves a **structured log** tied to tickets so reviews, debugging, and compliance-style questions have a paper trail—not a black box.
+
 A production-oriented reference implementation of **AI-assisted inbound support routing**: classify and prioritize customer messages with a deterministic database contract, observable audit trails, and explicit human override semantics.
 
 This repository is documented as a **technical case study**—oriented toward systems design, reliability boundaries, and operational trade-offs rather than “AI demos.”
 
 ---
-
 ## 1. Project overview
 
 ### Business problem
