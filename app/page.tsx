@@ -1,4 +1,5 @@
 import AdminDashboard from "@/app/components/admin-dashboard";
+import { SimulateCustomerTicketTrigger } from "@/app/components/simulate-customer-ticket";
 import { createClient } from "@supabase/supabase-js";
 
 /** Always fetch fresh counts and queues (never bake a stale snapshot at build time). */
@@ -183,6 +184,7 @@ export default async function Home() {
   return (
     <AdminDashboard
       departments={payload.departments}
+      headerActions={<SimulateCustomerTicketTrigger />}
       stats={payload.stats}
       tickets={payload.tickets}
     />

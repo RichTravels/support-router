@@ -1,6 +1,7 @@
 "use client";
 
 import { overrideTicketDepartment } from "@/app/actions/tickets";
+import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
 
 export type DepartmentOption = {
@@ -30,6 +31,8 @@ type Props = {
   stats: DashboardStats;
   tickets: TicketRow[];
   departments: DepartmentOption[];
+  /** Injected from the server page (e.g. demo ticket CTA + modal). */
+  headerActions?: ReactNode;
 };
 
 function priorityBadgeClasses(priority: string | null) {
@@ -57,6 +60,7 @@ export default function AdminDashboard({
   stats,
   tickets,
   departments,
+  headerActions,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<Record<string, string>>({});
@@ -71,8 +75,8 @@ export default function AdminDashboard({
       </div>
 
       <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-6 lg:px-8">
-        <header className="mb-10 flex flex-col gap-4 border-b border-zinc-800/80 pb-8 sm:flex-row sm:items-end sm:justify-between">
-          <div>
+        <header className="mb-10 flex flex-col gap-6 border-b border-zinc-800/80 pb-8 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400/90">
               Support Router
             </p>
@@ -84,9 +88,12 @@ export default function AdminDashboard({
               override routing when specialists need to own a thread manually.
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-xl border border-zinc-700/70 bg-zinc-900/50 px-4 py-2 text-xs text-zinc-400">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]" />
-            Live workspace
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3">
+            {headerActions}
+            <div className="flex items-center gap-2 rounded-xl border border-zinc-700/70 bg-zinc-900/50 px-4 py-2 text-xs text-zinc-400">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]" />
+              Live workspace
+            </div>
           </div>
         </header>
 
