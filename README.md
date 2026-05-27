@@ -7,11 +7,32 @@
 - **Humans stay in charge:** Operators can **override** the routed department anytime; those decisions are tracked so workflows stay trustworthy.
 - **Audit-ready:** Every AI run leaves a **structured log** tied to tickets so reviews, debugging, and compliance-style questions have a paper trail—not a black box.
 
+## Project Preview
+
+![Operations dashboard overview](public/images/dashboard-main.png)
+
+### Live operations dashboard — metrics & ticket queue
+
+Supabase-backed KPIs (open volume, high-priority load, mean AI confidence from `ai_logs`) sit above a live ticket table: every row is authoritative Postgres state produced or updated by the routing pipeline and overrides.
+
+![Simulate Customer Ticket modal](public/images/ticket-modal.png)
+
+### Simulate Customer Ticket — ingestion without internal tools
+
+Visitors exercise the same **`POST /api/tickets`** production path the API would use—OpenAI JSON classification, department resolution, synchronous ticket + `ai_logs` writes, then client `router.refresh()` to surface the routed row.
+
+![Department dropdown override control](public/images/dropdown-override.png)
+
+### Routing override — accountable human ownership
+
+Each `<select>` invokes a Server Action to repoint `department_id` and clears `ai_routed` so analysts can see at a glance whether assignment was model-driven or operator-corrected—without erasing AI-generated summaries.
+
 A production-oriented reference implementation of **AI-assisted inbound support routing**: classify and prioritize customer messages with a deterministic database contract, observable audit trails, and explicit human override semantics.
 
 This repository is documented as a **technical case study**—oriented toward systems design, reliability boundaries, and operational trade-offs rather than “AI demos.”
 
 ---
+
 ## 1. Project overview
 
 ### Business problem
