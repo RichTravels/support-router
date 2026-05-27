@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Dashboard data uses the plain `@supabase/supabase-js` client (no `@supabase/ssr`
- * cookie/session layer). Prefer SUPABASE_SERVICE_ROLE_KEY on the server so reads
- * are not blocked by RLS for anonymous recruiters.
+ * cookie/session layer, no Next.js middleware). Prefer SUPABASE_SERVICE_ROLE_KEY on
+ * the server so reads are not blocked by RLS for anonymous visitors.
  */
 function createDashboardSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();

@@ -22,7 +22,7 @@ export const createClient = (
               cookieStore.set(name, value, options),
             );
           } catch {
-            // `setAll` was called from a Server Component — ignore if middleware refreshes sessions.
+            // Cookie writes from Server Components are limited; callers may omit setAll elsewhere.
           }
         },
       },
