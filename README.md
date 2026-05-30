@@ -7,6 +7,10 @@
 - **Humans stay in charge:** Operators can **override** the routed department anytime; those decisions are tracked so workflows stay trustworthy.
 - **Audit-ready:** Every AI run leaves a **structured log** tied to tickets so reviews, debugging, and compliance-style questions have a paper trail—not a black box.
 
+**🔗 Live Production Deployment:** [https://support-router.vercel.app/](https://support-router.vercel.app/)
+
+---
+
 ## Project Preview
 
 ![Operations dashboard overview](public/images/dashboard-main.png)
