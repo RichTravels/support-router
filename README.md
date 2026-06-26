@@ -109,4 +109,4 @@ The app expects three Supabase/Postgres tables: `departments`, `tickets`, and `a
 
 ## License
 
-Private / portfolio use unless otherwise noted by the repository owner.
+MIT — see [LICENSE](LICENSE).
