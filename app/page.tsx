@@ -1,34 +1,19 @@
 import AdminDashboard from "@/app/components/admin-dashboard";
 import { SimulateCustomerTicketTrigger } from "@/app/components/simulate-customer-ticket";
-import { createClient } from "@supabase/supabase-js";
+import { getOperator } from "@/utils/auth";
+import { createServiceClient } from "@/utils/supabase/service";
+import { redirect } from "next/navigation";
 
 /** Always fetch fresh counts and queues (never bake a stale snapshot at build time). */
 export const dynamic = "force-dynamic";
 
-/**
- * Dashboard data uses the plain `@supabase/supabase-js` client (no `@supabase/ssr`
- * cookie/session layer, no Next.js middleware). Prefer SUPABASE_SERVICE_ROLE_KEY on
- * the server so reads are not blocked by RLS for anonymous visitors.
- */
-function createDashboardSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const secretKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ??
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
-
-  if (!url || !secretKey) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (recommended) or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
-    );
+async function fetchDashboardData() {
+  const operator = await getOperator();
+  if (!operator) {
+    throw new Error("Unauthorized");
   }
 
-  return createClient(url, secretKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
-
-async function fetchDashboardData() {
-  const supabase = createDashboardSupabase();
+  const supabase = createServiceClient();
 
   const departmentsRes = await supabase
     .from("departments")
@@ -162,6 +147,11 @@ async function fetchDashboardData() {
 }
 
 export default async function Home() {
+  const operator = await getOperator();
+  if (!operator) {
+    redirect("/login");
+  }
+
   let payload: Awaited<ReturnType<typeof fetchDashboardData>>;
   try {
     payload = await fetchDashboardData();
@@ -173,7 +163,7 @@ export default async function Home() {
           <p className="font-semibold text-red-100">Dashboard unavailable</p>
           <p className="mt-2 text-red-200/90">{msg}</p>
           <p className="mt-4 text-xs text-red-300/70">
-            Ensure SUPABASE_SERVICE_ROLE_KEY is set for server-side reads, and that
+            Confirm SUPABASE_SERVICE_ROLE_KEY is set on the server, and that
             `tickets` includes optional columns: `created_at`, `status`, `ai_routed`.
           </p>
         </div>
@@ -185,6 +175,7 @@ export default async function Home() {
     <AdminDashboard
       departments={payload.departments}
       headerActions={<SimulateCustomerTicketTrigger />}
+      operatorEmail={operator.email}
       stats={payload.stats}
       tickets={payload.tickets}
     />

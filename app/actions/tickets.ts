@@ -2,12 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 
+import { getOperator } from "@/utils/auth";
 import { createServiceClient } from "@/utils/supabase/service";
 
 export async function overrideTicketDepartment(
   ticketId: string,
   departmentId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const operator = await getOperator();
+  if (!operator) {
+    return { ok: false, error: "You need to sign in again." };
+  }
+
   if (!ticketId || !departmentId) {
     return { ok: false, error: "Missing ticket or department." };
   }
