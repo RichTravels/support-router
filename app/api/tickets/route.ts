@@ -12,14 +12,16 @@
  * NEXT_PUBLIC_SUPABASE_URL
  *   — Existing Supabase project URL.
  *
- * SUPABASE_SERVICE_ROLE_KEY (strongly recommended)
- *   — Server-only secret key. Bypasses RLS so this route can read `departments`
- *     and insert into `tickets` and `ai_logs` without a user session.
+ * SUPABASE_SERVICE_ROLE_KEY (required)
+ *   — Server-only secret key. Never prefix it with NEXT_PUBLIC_.
+ *   — Bypasses RLS so this public intake route can read `departments` and
+ *     insert one `tickets` row plus an `ai_logs` row without a user session.
  *   — Available in Dashboard → Settings → API → service_role / secret key.
  *
- * If you omit the service role, the route falls back to
- * NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY instead; then your RLS policies must
- * allow the needed SELECT/INSERT for this workflow (not typical for anon).
+ * This POST stays public so customers can submit a ticket. It must not read
+ * or return any other ticket. Callers are rate limited per IP.
+ * TICKET_INTAKE_RATE_LIMIT (optional, default 10)
+ * TICKET_INTAKE_RATE_WINDOW_SECONDS (optional, default 60)
  *
  * Expected Supabase shapes (rename columns here if yours differ):
  * - departments(id, name) — routed by comparing normalized `name`.
@@ -30,8 +32,62 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+
+import { clientIp, createRateLimiter, positiveInt } from "@/utils/rate-limit";
+import { createServiceClient } from "@/utils/supabase/service";
+
+const intakeLimiter = createRateLimiter({
+  limit: positiveInt(process.env.TICKET_INTAKE_RATE_LIMIT, 10, 1_000),
+  windowMs:
+    positiveInt(process.env.TICKET_INTAKE_RATE_WINDOW_SECONDS, 60, 86_400) *
+    1000,
+});
+
+const MAX_BODY_CHARS = 32_000;
+
+function noStoreJson(body: unknown, init: { status: number }) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+/** Stop reading once the cap is exceeded so a public caller cannot buffer a huge body. */
+async function readBodyLimited(
+  request: Request,
+  maxChars: number,
+): Promise<{ ok: true; text: string } | { ok: false }> {
+  const advertised = Number(request.headers.get("content-length"));
+  if (Number.isFinite(advertised) && advertised > maxChars) {
+    return { ok: false };
+  }
+
+  if (!request.body) return { ok: true, text: "" };
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxChars) {
+        await reader.cancel();
+        return { ok: false };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // cancel() can release the reader before this runs.
+    }
+  }
+
+  return { ok: true, text: new TextDecoder().decode(Buffer.concat(chunks)) };
+}
 
 type DepartmentRow = { id: string; name: string };
 
@@ -45,23 +101,7 @@ type AiTicketAnalysis = {
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
 function getSupabaseServer() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const secretKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-  if (!url?.trim()) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL is missing.");
-  }
-  if (!secretKey?.trim()) {
-    throw new Error(
-      "Set SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
-    );
-  }
-
-  return createClient(url, secretKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  return createServiceClient();
 }
 
 function normalizeName(s: string) {
@@ -224,19 +264,38 @@ async function insertAiLog(
 }
 
 export async function POST(request: Request) {
+  const limit = intakeLimiter.check(`intake:${clientIp(request.headers)}`);
+  if (!limit.ok) {
+    const response = noStoreJson(
+      { error: "Too many ticket submissions. Try again shortly." },
+      { status: 429 },
+    );
+    response.headers.set("Retry-After", String(limit.retryAfterSeconds));
+    return response;
+  }
+
   let supabase;
   try {
     supabase = getSupabaseServer();
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Configuration error.";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[tickets] configuration error:", msg);
+    return noStoreJson({ error: "Ticket intake is not configured." }, { status: 500 });
   }
 
   let bodyJson: Record<string, unknown>;
   try {
-    bodyJson = await request.json();
+    const rawBody = await readBodyLimited(request, MAX_BODY_CHARS);
+    if (!rawBody.ok) {
+      return noStoreJson({ error: "Request body is too large." }, { status: 413 });
+    }
+    const parsed: unknown = JSON.parse(rawBody.text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return noStoreJson({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    bodyJson = parsed as Record<string, unknown>;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return noStoreJson({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   const customer_email =
@@ -249,11 +308,22 @@ export async function POST(request: Request) {
     typeof bodyJson.message === "string" ? bodyJson.message.trim() : "";
 
   if (!customer_email || !subject || !message) {
-    return NextResponse.json(
+    return noStoreJson(
       {
         error:
           "Required fields: customer_email (non-empty string), subject, message.",
       },
+      { status: 400 },
+    );
+  }
+
+  if (
+    customer_email.length > 320 ||
+    subject.length > 300 ||
+    message.length > 8_000
+  ) {
+    return noStoreJson(
+      { error: "One or more fields are too long." },
       { status: 400 },
     );
   }
@@ -264,15 +334,15 @@ export async function POST(request: Request) {
 
   if (deptError) {
     console.error("departments lookup failed:", deptError);
-    return NextResponse.json(
-      { error: deptError.message, details: deptError.details },
+    return noStoreJson(
+      { error: "Could not load departments." },
       { status: 500 },
     );
   }
 
   const deptRows = (departments ?? []) as DepartmentRow[];
   if (!deptRows.length) {
-    return NextResponse.json(
+    return noStoreJson(
       {
         error: "No departments found; populate `departments` before accepting tickets.",
       },
@@ -310,7 +380,7 @@ export async function POST(request: Request) {
       },
       confidence_score: null,
     });
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return noStoreJson({ error: msg }, { status: 502 });
   }
 
   const {
@@ -338,7 +408,7 @@ export async function POST(request: Request) {
       },
       confidence_score,
     });
-    return NextResponse.json(
+    return noStoreJson(
       {
         error: "AI suggested a department_name that does not match any department row.",
         suggested_department_name: suggested,
@@ -366,7 +436,6 @@ export async function POST(request: Request) {
     .single();
 
   if (ticketError) {
-    const msg = ticketError.message;
     await insertAiLog(supabase, {
       ticket_id: null,
       raw_prompt: {
@@ -385,7 +454,7 @@ export async function POST(request: Request) {
       },
       confidence_score,
     });
-    return NextResponse.json({ error: msg, details: ticketError.details }, { status: 500 });
+    return noStoreJson({ error: "Could not save the ticket." }, { status: 500 });
   }
 
   const ticketId = inserted!.id as string;
@@ -405,12 +474,15 @@ export async function POST(request: Request) {
     confidence_score,
   });
 
-  return NextResponse.json({
-    ticket_id: ticketId,
-    sentiment: analysis.sentiment,
-    ai_priority: analysis.ai_priority,
-    ai_summary: analysis.ai_summary,
-    department_id: resolved.id,
-    department_name: resolved.name,
-  }, { status: 201 });
+  return noStoreJson(
+    {
+      ticket_id: ticketId,
+      sentiment: analysis.sentiment,
+      ai_priority: analysis.ai_priority,
+      ai_summary: analysis.ai_summary,
+      department_id: resolved.id,
+      department_name: resolved.name,
+    },
+    { status: 201 },
+  );
 }

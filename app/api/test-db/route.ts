@@ -1,16 +1,35 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createClient } from "@/utils/supabase/server";
+
+import { getOperator } from "@/utils/auth";
+import { createServiceClient } from "@/utils/supabase/service";
+
+function noStoreJson(body: unknown, status: number) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
+}
 
 export async function GET() {
-  const cookieStore = await cookies();
-  const supabase = createClient(cookieStore);
-
-  const { data, error } = await supabase.from("departments").select("*");
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  const operator = await getOperator();
+  if (!operator) {
+    return noStoreJson({ error: "Unauthorized" }, 401);
   }
 
-  return NextResponse.json(data);
+  try {
+    const supabase = createServiceClient();
+    const { data, error } = await supabase.from("departments").select("id, name");
+
+    if (error) {
+      console.error("[test-db]", error.message);
+      return noStoreJson({ error: "Could not read departments." }, 500);
+    }
+
+    return noStoreJson(data, 200);
+  } catch (error) {
+    console.error(
+      "[test-db]",
+      error instanceof Error ? error.message : "unknown error",
+    );
+    return noStoreJson({ error: "Could not read departments." }, 500);
+  }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { overrideTicketDepartment } from "@/app/actions/tickets";
+import { signOut } from "@/app/login/actions";
 import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
 
@@ -31,6 +32,7 @@ type Props = {
   stats: DashboardStats;
   tickets: TicketRow[];
   departments: DepartmentOption[];
+  operatorEmail: string;
   /** Injected from the server page (e.g. demo ticket CTA + modal). */
   headerActions?: ReactNode;
 };
@@ -60,6 +62,7 @@ export default function AdminDashboard({
   stats,
   tickets,
   departments,
+  operatorEmail,
   headerActions,
 }: Props) {
   const [isPending, startTransition] = useTransition();
@@ -94,6 +97,20 @@ export default function AdminDashboard({
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]" />
               Live workspace
             </div>
+            <form action={signOut} className="flex items-center gap-2">
+              <span
+                className="hidden max-w-[220px] truncate text-xs text-zinc-400 sm:inline"
+                title={operatorEmail}
+              >
+                {operatorEmail}
+              </span>
+              <button
+                className="rounded-lg border border-zinc-600 px-2.5 py-1 text-xs font-medium text-zinc-200 transition hover:bg-zinc-800"
+                type="submit"
+              >
+                Sign out
+              </button>
+            </form>
           </div>
         </header>
 
@@ -223,8 +240,22 @@ export default function AdminDashboard({
                               });
 
                               startTransition(async () => {
-                                const res =
-                                  await overrideTicketDepartment(t.id, next);
+                                let res: Awaited<
+                                  ReturnType<typeof overrideTicketDepartment>
+                                >;
+                                try {
+                                  res = await overrideTicketDepartment(
+                                    t.id,
+                                    next,
+                                  );
+                                } catch {
+                                  el.value = prev;
+                                  setFeedback((f) => ({
+                                    ...f,
+                                    [t.id]: "You need to sign in again.",
+                                  }));
+                                  return;
+                                }
                                 if (!res.ok) {
                                   el.value = prev;
                                   setFeedback((f) => ({
